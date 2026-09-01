@@ -40,8 +40,7 @@
 
   <div id="done" class="hidden">
     <div style="font-size:clamp(2rem,8vw,5rem);font-weight:900">TIME!</div>
-    <div style="font-size:1.2rem;margin:18px 0">Tap PLAY to open the song in Spotify.</div>
-    <button id="play">▶ PLAY IN SPOTIFY</button><br>
+    <div id="redirectMessage" style="font-size:1.2rem;margin:18px 0">Opening Spotify…</div>
     <button id="again">↻ AGAIN</button>
   </div>
 </main>
@@ -56,8 +55,8 @@ const ready = document.getElementById("ready");
 const timer = document.getElementById("timer");
 const count = document.getElementById("count");
 const done = document.getElementById("done");
-const play = document.getElementById("play");
 const again = document.getElementById("again");
+const redirectMessage = document.getElementById("redirectMessage");
 
 function run() {
   ready.classList.add("hidden");
@@ -73,9 +72,14 @@ function run() {
       clearInterval(tick);
       timer.classList.add("hidden");
       done.classList.remove("hidden");
-      play.style.display = spotify ? "inline-block" : "none";
       again.style.display = "inline-block";
       if (navigator.vibrate) navigator.vibrate([120,80,120]);
+      if (spotify) {
+        redirectMessage.textContent = "Opening Spotify…";
+        setTimeout(() => { window.location.href = spotify; }, 250);
+      } else {
+        redirectMessage.textContent = "No Spotify track was supplied.";
+      }
     } else {
       count.textContent = n;
     }
@@ -88,9 +92,6 @@ again.addEventListener("click", () => {
   ready.classList.remove("hidden");
 });
 
-play.addEventListener("click", () => {
-  if (spotify) window.location.href = spotify;
-});
 </script>
 </body>
 </html>
