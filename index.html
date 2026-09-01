@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#000">
+<title>HITSTER Countdown</title>
+<style>
+  *{box-sizing:border-box}
+  html,body{margin:0;width:100%;height:100%;background:#000;color:#fff;font-family:Arial,Helvetica,sans-serif}
+  body{display:flex;align-items:center;justify-content:center;text-align:center;overflow:hidden}
+  main{width:100%;padding:28px}
+  #rotate{font-size:clamp(2rem,8vw,5rem);font-weight:800;line-height:1.05}
+  #sub{font-size:clamp(1rem,4vw,1.5rem);margin-top:18px;opacity:.8}
+  #count{font-size:min(45vw,20rem);font-weight:900;line-height:1;margin:10px 0}
+  button{border:0;border-radius:999px;padding:18px 34px;font-size:1.25rem;font-weight:800;cursor:pointer}
+  #play{display:none;background:#1ed760;color:#000}
+  #start{background:#fff;color:#000}
+  #again{display:none;background:#333;color:#fff;margin-top:14px}
+  .hidden{display:none!important}
+  @media (orientation:landscape){
+    #rotate{font-size:clamp(1.5rem,5vw,3rem)}
+    #sub{margin-top:10px}
+  }
+</style>
+</head>
+<body>
+<main>
+  <div id="rotate">↻ TURN YOUR PHONE</div>
+  <div id="sub">Landscape mode recommended</div>
+
+  <div id="ready" style="margin-top:30px">
+    <button id="start">START COUNTDOWN</button>
+  </div>
+
+  <div id="timer" class="hidden">
+    <div id="count">10</div>
+    <div id="sub">Get ready…</div>
+  </div>
+
+  <div id="done" class="hidden">
+    <div style="font-size:clamp(2rem,8vw,5rem);font-weight:900">TIME!</div>
+    <div style="font-size:1.2rem;margin:18px 0">Tap PLAY to open the song in Spotify.</div>
+    <button id="play">▶ PLAY IN SPOTIFY</button><br>
+    <button id="again">↻ AGAIN</button>
+  </div>
+</main>
+
+<script>
+const params = new URLSearchParams(location.search);
+const spotify = params.get("spotify") || "";
+const seconds = Math.max(1, Math.min(60, Number(params.get("seconds")) || 10));
+
+const start = document.getElementById("start");
+const ready = document.getElementById("ready");
+const timer = document.getElementById("timer");
+const count = document.getElementById("count");
+const done = document.getElementById("done");
+const play = document.getElementById("play");
+const again = document.getElementById("again");
+
+function run() {
+  ready.classList.add("hidden");
+  done.classList.add("hidden");
+  timer.classList.remove("hidden");
+
+  let n = seconds;
+  count.textContent = n;
+
+  const tick = setInterval(() => {
+    n--;
+    if (n <= 0) {
+      clearInterval(tick);
+      timer.classList.add("hidden");
+      done.classList.remove("hidden");
+      play.style.display = spotify ? "inline-block" : "none";
+      again.style.display = "inline-block";
+      if (navigator.vibrate) navigator.vibrate([120,80,120]);
+    } else {
+      count.textContent = n;
+    }
+  }, 1000);
+}
+
+start.addEventListener("click", run);
+again.addEventListener("click", () => {
+  done.classList.add("hidden");
+  ready.classList.remove("hidden");
+});
+
+play.addEventListener("click", () => {
+  if (spotify) window.location.href = spotify;
+});
+</script>
+</body>
+</html>
