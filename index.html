@@ -1335,8 +1335,8 @@ refreshDevices.addEventListener(
  *   1. Use native BarcodeDetector when available.
  *   2. Fall back to jsQR when BarcodeDetector is unavailable.
  *
- * Scanned QR codes are converted into this app's own URL so the
- * next countdown starts instead of navigating away to Spotify.
+ * Scanned QR codes are opened directly. The exact URL/Spotify URI
+ * stored in the QR code is used as the navigation destination.
  */
 
 async function stopSpotifyPlayback() {
@@ -1392,56 +1392,41 @@ function stopQrScanner() {
   qrDetectionInProgress = false;
 }
 
-function extractSpotifyTrackId(text) {
-  if (!text) return null;
+function getQrDestination(value) {
+  if (!value) return null;
 
-  const value = String(text).trim();
+  const destination = String(value).trim();
+  if (!destination) return null;
 
-  // spotify:track:TRACK_ID
-  const uriMatch = value.match(/^spotify:track:([A-Za-z0-9]+)/);
-  if (uriMatch) return uriMatch[1];
-
-  // Spotify URLs, including /intl-de/track/... locale prefixes.
-  try {
-    const url = new URL(value);
-    if (url.hostname === "open.spotify.com" || url.hostname.endsWith(".spotify.com")) {
-      const match = url.pathname.match(/\/track\/([A-Za-z0-9]+)/);
-      if (match) return match[1];
-    }
-  } catch {
-    // Not a URL; continue below.
+  // Accept normal web links as well as Spotify's custom URI scheme.
+  if (/^https?:\/\//i.test(destination) ||
+      /^spotify:/i.test(destination)) {
+    return destination;
   }
 
-  // Also accept a raw track ID.
-  if (/^[A-Za-z0-9]{10,}$/.test(value)) return value;
-
   return null;
-}
-
-function startNextSong(trackId) {
-  // Reload this app with the newly scanned track, preserving the countdown length.
-  const nextUrl = new URL(window.location.href);
-  nextUrl.search = "";
-  nextUrl.searchParams.set("spotify", trackId);
-  nextUrl.searchParams.set("seconds", String(seconds));
-  window.location.replace(nextUrl.toString());
 }
 
 function handleQrValue(value) {
   if (qrDetected || !value) return false;
 
-  const trackId = extractSpotifyTrackId(value);
+  const destination = getQrDestination(value);
 
-  if (!trackId) {
-    qrMessage.textContent = "QR detected, but it is not a Spotify track.";
+  if (!destination) {
+    qrMessage.textContent = "QR detected, but it does not contain a valid link.";
     return false;
   }
 
   qrDetected = true;
-  qrMessage.textContent = "QR code detected! Starting next song…";
+  qrMessage.textContent = "QR code detected! Opening link…";
   stopQrScanner();
 
-  setTimeout(() => startNextSong(trackId), 150);
+  // Navigate to exactly the link stored in the QR code.
+  // location.assign() behaves like clicking a normal link.
+  setTimeout(() => {
+    window.location.assign(destination);
+  }, 150);
+
   return true;
 }
 
