@@ -1448,7 +1448,10 @@ function handleQrValue(value) {
 async function scanQrCode() {
   if (qrDetected || qrScanner.classList.contains("hidden")) return;
 
-  if (qrDetectionInProgress || !qrVideo.videoWidth || !qrVideo.videoHeight) {
+  if (qrDetectionInProgress ||
+      !qrVideo.videoWidth ||
+      !qrVideo.videoHeight ||
+      qrVideo.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) {
     qrScanAnimation = requestAnimationFrame(scanQrCode);
     return;
   }
@@ -1456,22 +1459,39 @@ async function scanQrCode() {
   qrDetectionInProgress = true;
 
   try {
-    // 1. Prefer native BarcodeDetector.
+    // Copy the current camera frame once. Both detectors use the same canvas.
+    qrCanvas.width = qrVideo.videoWidth;
+    qrCanvas.height = qrVideo.videoHeight;
+
+    const ctx = qrCanvas.getContext("2d", { willReadFrequently: true });
+    ctx.drawImage(qrVideo, 0, 0, qrCanvas.width, qrCanvas.height);
+
+    let nativeDetectedSomething = false;
+
+    // 1. Try the native BarcodeDetector first when it is actually usable.
     if (barcodeDetector) {
-      const barcodes = await barcodeDetector.detect(qrVideo);
-      for (const barcode of barcodes || []) {
-        if (handleQrValue(barcode.rawValue)) return;
+      try {
+        const barcodes = await barcodeDetector.detect(qrCanvas);
+
+        for (const barcode of barcodes || []) {
+          nativeDetectedSomething = true;
+          if (handleQrValue(barcode.rawValue)) return;
+        }
+      } catch (nativeError) {
+        console.warn(
+          "Native BarcodeDetector failed; disabling it and using jsQR:",
+          nativeError
+        );
+
+        // Do not let a broken/partial BarcodeDetector block the fallback.
+        barcodeDetector = null;
       }
     }
 
-    // 2. Fall back to jsQR if native QR detection is unavailable.
-    if (!barcodeDetector && window.jsQR) {
-      qrCanvas.width = qrVideo.videoWidth;
-      qrCanvas.height = qrVideo.videoHeight;
-
-      const ctx = qrCanvas.getContext("2d", { willReadFrequently: true });
-      ctx.drawImage(qrVideo, 0, 0, qrCanvas.width, qrCanvas.height);
-
+    // 2. ALWAYS try jsQR when native detection did not decode a usable QR.
+    // This is important on browsers where BarcodeDetector exists but does not
+    // reliably recognize QR codes from a live camera stream.
+    if (!nativeDetectedSomething && window.jsQR) {
       const image = ctx.getImageData(0, 0, qrCanvas.width, qrCanvas.height);
       const result = jsQR(
         image.data,
@@ -1501,10 +1521,12 @@ async function openQrScanner() {
 
   barcodeDetector = await createBarcodeDetector();
 
-  if (barcodeDetector) {
+  if (barcodeDetector && window.jsQR) {
+    console.log("Using BarcodeDetector first, with jsQR fallback on every unsuccessful frame.");
+  } else if (barcodeDetector) {
     console.log("Using native BarcodeDetector for QR scanning.");
   } else if (window.jsQR) {
-    console.log("BarcodeDetector unavailable; using jsQR fallback.");
+    console.log("BarcodeDetector unavailable; using jsQR.");
   } else {
     qrMessage.textContent = "This browser cannot scan QR codes.";
     return;
@@ -1523,7 +1545,9 @@ async function openQrScanner() {
 
     qrVideo.srcObject = qrStream;
     await qrVideo.play();
-    qrMessage.textContent = "Point the camera at the HITSTER QR code…";
+    qrMessage.textContent = barcodeDetector
+      ? "Scanning… native QR detector + jsQR fallback"
+      : "Scanning… jsQR";
     scanQrCode();
   } catch (error) {
     console.error("Camera error:", error);
