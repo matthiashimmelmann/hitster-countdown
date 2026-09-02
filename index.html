@@ -133,7 +133,6 @@
 <main>
 
   <div id="rotate">↻ TURN YOUR PHONE</div>
-  <div id="sub">Landscape mode recommended</div>
 
   <div id="spotifyStatus">Spotify: checking…</div>
 
@@ -521,19 +520,19 @@ async function handleOAuthCallback() {
 
 
 function cleanOAuthUrl() {
+  const url = new URL(window.location.href);
 
-  const cleanUrl =
-    window.location.origin +
-    window.location.pathname +
-    window.location.search;
+  // Remove Spotify OAuth parameters
+  url.searchParams.delete("code");
+  url.searchParams.delete("state");
+  url.searchParams.delete("error");
 
   window.history.replaceState(
     {},
     document.title,
-    cleanUrl
+    url.pathname + url.search + url.hash
   );
 }
-
 
 /* ============================================================
  * TOKEN STORAGE / REFRESH
