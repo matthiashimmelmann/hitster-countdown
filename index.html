@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#000">
-<title>musiccard Countdown</title>
+<title>HITSTER Countdown</title>
 
 <style>
   *{box-sizing:border-box}
@@ -133,6 +133,7 @@
 <main>
 
   <div id="rotate">↻ TURN YOUR PHONE</div>
+  <div id="sub">Landscape mode recommended</div>
 
   <div id="spotifyStatus">Spotify: checking…</div>
 
@@ -183,7 +184,7 @@
 <script>
 /*
  * ============================================================
- * Musiccard + SPOTIFY WEB API
+ * HITSTER + SPOTIFY WEB API
  * ============================================================
  *
  * 1. Create a Spotify Developer App.
@@ -191,10 +192,10 @@
  * 3. Add the exact value of REDIRECT_URI to the Spotify app.
  *
  * Example GitHub Pages URL:
- * https://YOURNAME.github.io/Musiccard-countdown/
+ * https://YOURNAME.github.io/hitster/
  *
  * QR code example:
- * https://YOURNAME.github.io/Musiccard-countdown/?spotify=TRACK_ID&seconds=10
+ * https://YOURNAME.github.io/hitster/?spotify=TRACK_ID&seconds=10
  *
  * IMPORTANT:
  * - No Spotify client secret belongs in this file.
@@ -202,7 +203,7 @@
  * - The Spotify app/device must be available as a Spotify Connect device.
  */
 
-const CLIENT_ID = "c6477beb3421485494348f841dead1df";
+const CLIENT_ID = "e3a4aaa718214907b45c1b79753bc199";
 
 /*
  * Using the current page as the OAuth callback makes this file
@@ -355,12 +356,12 @@ async function loginWithSpotify() {
     randomString(32);
 
   localStorage.setItem(
-    "musiccard_code_verifier",
+    "hitster_code_verifier",
     codeVerifier
   );
 
   localStorage.setItem(
-    "musiccard_oauth_state",
+    "hitster_oauth_state",
     state
   );
 
@@ -421,7 +422,7 @@ async function handleOAuthCallback() {
 
   const savedState =
     localStorage.getItem(
-      "musiccard_oauth_state"
+      "hitster_oauth_state"
     );
 
   if (!savedState ||
@@ -438,7 +439,7 @@ async function handleOAuthCallback() {
 
   const codeVerifier =
     localStorage.getItem(
-      "musiccard_code_verifier"
+      "hitster_code_verifier"
     );
 
   if (!codeVerifier) {
@@ -492,11 +493,11 @@ async function handleOAuthCallback() {
     saveTokens(data);
 
     localStorage.removeItem(
-      "musiccard_code_verifier"
+      "hitster_code_verifier"
     );
 
     localStorage.removeItem(
-      "musiccard_oauth_state"
+      "hitster_oauth_state"
     );
 
     cleanOAuthUrl();
@@ -541,20 +542,20 @@ function cleanOAuthUrl() {
 function saveTokens(data) {
 
   localStorage.setItem(
-    "musiccard_access_token",
+    "hitster_access_token",
     data.access_token
   );
 
   if (data.refresh_token) {
 
     localStorage.setItem(
-      "musiccard_refresh_token",
+      "hitster_refresh_token",
       data.refresh_token
     );
   }
 
   localStorage.setItem(
-    "musiccard_token_expires_at",
+    "hitster_token_expires_at",
     String(
       Date.now() +
       ((data.expires_in || 3600) * 1000)
@@ -567,7 +568,7 @@ async function refreshAccessToken() {
 
   const refreshToken =
     localStorage.getItem(
-      "musiccard_refresh_token"
+      "hitster_refresh_token"
     );
 
   if (!refreshToken) {
@@ -614,11 +615,11 @@ async function refreshAccessToken() {
     console.error(error);
 
     localStorage.removeItem(
-      "musiccard_access_token"
+      "hitster_access_token"
     );
 
     localStorage.removeItem(
-      "musiccard_token_expires_at"
+      "hitster_token_expires_at"
     );
 
     return null;
@@ -630,13 +631,13 @@ async function getAccessToken() {
 
   const token =
     localStorage.getItem(
-      "musiccard_access_token"
+      "hitster_access_token"
     );
 
   const expiresAt =
     Number(
       localStorage.getItem(
-        "musiccard_token_expires_at"
+        "hitster_token_expires_at"
       ) || 0
     );
 
