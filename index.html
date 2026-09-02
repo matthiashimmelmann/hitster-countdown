@@ -77,6 +77,8 @@
     margin-top:14px
   }
 
+  #nextSong{display:none;background:#1ed760;color:#000;margin-top:14px}
+
   #connect{
     margin-top:24px
   }
@@ -133,6 +135,7 @@
 <main>
 
   <div id="rotate">↻ TURN YOUR PHONE</div>
+  <div id="sub">Landscape mode recommended</div>
 
   <div id="spotifyStatus">Spotify: checking…</div>
 
@@ -174,6 +177,8 @@
     </div>
 
     <button id="again">↻ AGAIN</button>
+    <button id="nextSong">NEXT SONG →</button>
+    <input id="cameraInput" type="file" accept="image/*" capture="environment" hidden>
   </div>
 
   <div id="status"></div>
@@ -244,6 +249,8 @@ const timer = document.getElementById("timer");
 const count = document.getElementById("count");
 const done = document.getElementById("done");
 const again = document.getElementById("again");
+const nextSong = document.getElementById("nextSong");
+const cameraInput = document.getElementById("cameraInput");
 const redirectMessage =
   document.getElementById("redirectMessage");
 
@@ -390,14 +397,15 @@ async function handleOAuthCallback() {
   const url =
     new URL(window.location.href);
 
-  const code = url.searchParams.get("code");
-  const returnedState = url.searchParams.get("state");
-  const error = url.searchParams.get("error");
+  const code =
+    url.searchParams.get("code");
 
-  // Clean the URL immediately
-  if (code || returnedState || error) {
-    cleanOAuthUrl();
-  }
+  const returnedState =
+    url.searchParams.get("state");
+
+  const error =
+    url.searchParams.get("error");
+
   if (error) {
 
     console.error(
@@ -519,19 +527,19 @@ async function handleOAuthCallback() {
 
 
 function cleanOAuthUrl() {
-  const url = new URL(window.location.href);
 
-  // Remove Spotify OAuth parameters
-  url.searchParams.delete("code");
-  url.searchParams.delete("state");
-  url.searchParams.delete("error");
+  const cleanUrl =
+    window.location.origin +
+    window.location.pathname +
+    window.location.search;
 
   window.history.replaceState(
     {},
     document.title,
-    url.pathname + url.search + url.hash
+    cleanUrl
   );
 }
+
 
 /* ============================================================
  * TOKEN STORAGE / REFRESH
@@ -1132,6 +1140,8 @@ function finishNow(reason) {
 
   again.style.display =
     "inline-block";
+  nextSong.style.display =
+    "inline-block";
 
   redirectMessage.textContent =
     reason === "timer"
@@ -1267,18 +1277,14 @@ again.addEventListener(
 );
 
 
-connectButton.addEventListener("click", async () => {
-  console.log("1. Button clicked");
+connectButton.addEventListener(
+  "click",
+  async () => {
 
-  try {
-    console.log("2. Starting Spotify login");
     await loginWithSpotify();
-    console.log("3. loginWithSpotify finished");
-  } catch (e) {
-    console.error("SPOTIFY LOGIN ERROR:", e);
-    alert("Spotify login error:\n" + e.message);
   }
-});
+);
+
 
 refreshDevices.addEventListener(
   "click",
@@ -1287,6 +1293,31 @@ refreshDevices.addEventListener(
     await refreshDeviceList();
   }
 );
+
+
+/* ============================================================
+ * NEXT SONG / CAMERA
+ * ============================================================
+ */
+
+async function stopSpotifyPlayback() {
+  try {
+    const response = await spotifyFetch("/me/player/pause", { method: "PUT" });
+    if (!response.ok && response.status !== 403 && response.status !== 404) {
+      console.warn("Spotify pause failed:", response.status);
+    }
+  } catch (error) {
+    console.error("Could not pause Spotify:", error);
+  }
+}
+
+nextSong.addEventListener("click", async () => {
+  nextSong.disabled = true;
+  setStatus("Stopping Spotify…");
+  await stopSpotifyPlayback();
+  cameraInput.click();
+  nextSong.disabled = false;
+});
 
 
 /* ============================================================
