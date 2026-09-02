@@ -1267,14 +1267,18 @@ again.addEventListener(
 );
 
 
-connectButton.addEventListener(
-  "click",
-  async () => {
+connectButton.addEventListener("click", async () => {
+  console.log("1. Button clicked");
 
+  try {
+    console.log("2. Starting Spotify login");
     await loginWithSpotify();
+    console.log("3. loginWithSpotify finished");
+  } catch (e) {
+    console.error("SPOTIFY LOGIN ERROR:", e);
+    alert("Spotify login error:\n" + e.message);
   }
-);
-
+});
 
 refreshDevices.addEventListener(
   "click",
