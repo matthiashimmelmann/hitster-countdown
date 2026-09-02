@@ -79,6 +79,27 @@
 
   #nextSong{display:none;background:#1ed760;color:#000;margin-top:14px}
 
+  #qrScanner{
+    position:fixed;
+    inset:0;
+    z-index:1000;
+    background:#000;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    justify-content:center;
+    padding:20px;
+  }
+  #qrScanner.hidden{display:none!important}
+  #qrVideo{
+    width:min(92vw,700px);
+    max-height:70vh;
+    object-fit:cover;
+    border-radius:18px;
+  }
+  #qrMessage{margin:18px 0;font-size:1.1rem}
+  #closeScanner{background:#333;color:#fff}
+
   #connect{
     margin-top:24px
   }
@@ -128,6 +149,7 @@
     }
   }
 </style>
+<script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
 </head>
 
 <body>
@@ -178,7 +200,13 @@
 
     <button id="again">↻ AGAIN</button>
     <button id="nextSong">NEXT SONG →</button>
-    <input id="cameraInput" type="file" accept="image/*" capture="environment" hidden>
+
+    <div id="qrScanner" class="hidden">
+      <video id="qrVideo" autoplay playsinline muted></video>
+      <canvas id="qrCanvas" hidden></canvas>
+      <div id="qrMessage">Point the camera at the HITSTER QR code…</div>
+      <button id="closeScanner" type="button">CANCEL</button>
+    </div>
   </div>
 
   <div id="status"></div>
@@ -250,7 +278,11 @@ const count = document.getElementById("count");
 const done = document.getElementById("done");
 const again = document.getElementById("again");
 const nextSong = document.getElementById("nextSong");
-const cameraInput = document.getElementById("cameraInput");
+const qrScanner = document.getElementById("qrScanner");
+const qrVideo = document.getElementById("qrVideo");
+const qrCanvas = document.getElementById("qrCanvas");
+const qrMessage = document.getElementById("qrMessage");
+const closeScanner = document.getElementById("closeScanner");
 const redirectMessage =
   document.getElementById("redirectMessage");
 
@@ -1311,13 +1343,89 @@ async function stopSpotifyPlayback() {
   }
 }
 
+let qrStream = null;
+let qrScanAnimation = null;
+
+function stopQrScanner() {
+  if (qrScanAnimation) {
+    cancelAnimationFrame(qrScanAnimation);
+    qrScanAnimation = null;
+  }
+  if (qrStream) {
+    qrStream.getTracks().forEach(track => track.stop());
+    qrStream = null;
+  }
+  qrVideo.srcObject = null;
+  qrScanner.classList.add("hidden");
+}
+
+function extractTrackUrl(text) {
+  try {
+    const url = new URL(text);
+    const spotifyMatch = url.pathname.match(/\/track\/([A-Za-z0-9]+)/);
+    if (spotifyMatch) return url.href;
+  } catch {}
+  return null;
+}
+
+async function scanQrCode() {
+  if (!qrVideo.videoWidth || !qrVideo.videoHeight) {
+    qrScanAnimation = requestAnimationFrame(scanQrCode);
+    return;
+  }
+
+  qrCanvas.width = qrVideo.videoWidth;
+  qrCanvas.height = qrVideo.videoHeight;
+  const ctx = qrCanvas.getContext("2d", { willReadFrequently: true });
+  ctx.drawImage(qrVideo, 0, 0, qrCanvas.width, qrCanvas.height);
+  const image = ctx.getImageData(0, 0, qrCanvas.width, qrCanvas.height);
+  const result = window.jsQR
+    ? jsQR(image.data, image.width, image.height, { inversionAttempts: "attemptBoth" })
+    : null;
+
+  if (result && result.data) {
+    const trackUrl = extractTrackUrl(result.data);
+    if (trackUrl) {
+      qrMessage.textContent = "QR code detected!";
+      stopQrScanner();
+      // Load the newly scanned HITSTER card.
+      window.location.href = trackUrl;
+      return;
+    }
+    qrMessage.textContent = "QR detected, but it is not a Spotify track URL.";
+  }
+
+  qrScanAnimation = requestAnimationFrame(scanQrCode);
+}
+
+async function openQrScanner() {
+  qrScanner.classList.remove("hidden");
+  qrMessage.textContent = "Starting camera…";
+
+  try {
+    qrStream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: { ideal: "environment" } },
+      audio: false
+    });
+    qrVideo.srcObject = qrStream;
+    await qrVideo.play();
+    qrMessage.textContent = "Point the camera at the HITSTER QR code…";
+    scanQrCode();
+  } catch (error) {
+    console.error("Camera error:", error);
+    qrMessage.textContent = "Could not access the camera. Please allow camera access.";
+  }
+}
+
 nextSong.addEventListener("click", async () => {
   nextSong.disabled = true;
-  setStatus("Stopping Spotify…");
+  setStatus("Stopping Spotify and opening QR scanner…");
   await stopSpotifyPlayback();
-  cameraInput.click();
+  await openQrScanner();
   nextSong.disabled = false;
 });
+
+closeScanner.addEventListener("click", stopQrScanner);
 
 
 /* ============================================================
