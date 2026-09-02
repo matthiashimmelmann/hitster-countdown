@@ -1,2 +1,2 @@
-# hitster-countdown
-hitster-countdown
+# musiccard-countdown
+musiccard-countdown
