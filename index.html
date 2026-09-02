@@ -390,15 +390,14 @@ async function handleOAuthCallback() {
   const url =
     new URL(window.location.href);
 
-  const code =
-    url.searchParams.get("code");
+  const code = url.searchParams.get("code");
+  const returnedState = url.searchParams.get("state");
+  const error = url.searchParams.get("error");
 
-  const returnedState =
-    url.searchParams.get("state");
-
-  const error =
-    url.searchParams.get("error");
-
+  // Clean the URL immediately
+  if (code || returnedState || error) {
+    cleanOAuthUrl();
+  }
   if (error) {
 
     console.error(
