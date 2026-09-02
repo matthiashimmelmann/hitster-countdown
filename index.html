@@ -1418,14 +1418,21 @@ function handleQrValue(value) {
   }
 
   qrDetected = true;
-  qrMessage.textContent = "QR code detected! Opening link…";
   stopQrScanner();
 
-  // Navigate to exactly the link stored in the QR code.
-  // location.assign() behaves like clicking a normal link.
-  setTimeout(() => {
+  // Ask the user before opening the exact link stored in the QR code.
+  const confirmed = window.confirm(
+    `Open this link?\n\n${destination}`
+  );
+
+  if (confirmed) {
     window.location.assign(destination);
-  }, 150);
+  } else {
+    // Allow the user to scan another QR code.
+    qrDetected = false;
+    nextSong.disabled = false;
+    setStatus("Link not opened.");
+  }
 
   return true;
 }
