@@ -28,6 +28,7 @@
 
   main{
     width:100%;
+    max-width:760px;
     padding:28px
   }
 
@@ -50,29 +51,22 @@
     margin:10px 0
   }
 
-  #faceDownMessage{
-    font-size:clamp(2rem,8vw,5rem);
-    font-weight:900;
-    line-height:1.05
-  }
-
-  #faceDownSub{
-    font-size:clamp(1rem,4vw,1.5rem);
-    margin-top:18px;
-    opacity:.8
-  }
-
-  button{
+  button,select{
     border:0;
     border-radius:999px;
-    padding:18px 34px;
-    font-size:1.25rem;
+    padding:16px 24px;
+    font-size:1.05rem;
     font-weight:800;
     cursor:pointer
   }
 
-  #start{
-    background:#fff;
+  button:disabled{
+    opacity:.5;
+    cursor:not-allowed
+  }
+
+  #start,#connect{
+    background:#1ed760;
     color:#000
   }
 
@@ -83,8 +77,43 @@
     margin-top:14px
   }
 
+  #connect{
+    margin-top:24px
+  }
+
+  #deviceBox{
+    margin-top:22px
+  }
+
+  #device{
+    width:min(100%,420px);
+    background:#222;
+    color:#fff;
+    border:1px solid #555;
+  }
+
+  #status{
+    margin-top:18px;
+    font-size:1rem;
+    opacity:.85;
+    min-height:1.3em
+  }
+
+  #spotifyStatus{
+    margin-top:12px;
+    font-size:.95rem;
+    opacity:.8
+  }
+
   .hidden{
     display:none!important
+  }
+
+  .small{
+    font-size:.9rem;
+    opacity:.65;
+    line-height:1.4;
+    margin-top:14px
   }
 
   @media (orientation:landscape){
@@ -106,6 +135,26 @@
   <div id="rotate">↻ TURN YOUR PHONE</div>
   <div id="sub">Landscape mode recommended</div>
 
+  <div id="spotifyStatus">Spotify: checking…</div>
+
+  <div id="auth">
+    <button id="connect">CONNECT SPOTIFY</button>
+    <div class="small">
+      Required once per browser/device.<br>
+      Spotify Premium is required for playback control.
+    </div>
+  </div>
+
+  <div id="deviceBox" class="hidden">
+    <div class="small">Play on:</div>
+    <select id="device"></select>
+    <div>
+      <button id="refreshDevices" style="margin-top:12px;background:#333;color:#fff">
+        ↻ REFRESH DEVICES
+      </button>
+    </div>
+  </div>
+
   <div id="ready" style="margin-top:30px">
     <button id="start">START COUNTDOWN</button>
   </div>
@@ -116,26 +165,67 @@
   </div>
 
   <div id="done" class="hidden">
-
-    <div id="faceDownMessage">
+    <div style="font-size:clamp(2rem,8vw,5rem);font-weight:900">
       TIME!
     </div>
 
-    <div id="faceDownSub">
-      Opening Spotify…
+    <div id="redirectMessage"
+         style="font-size:1.2rem;margin:18px 0">
+      Starting Spotify…
     </div>
 
     <button id="again">↻ AGAIN</button>
-
   </div>
+
+  <div id="status"></div>
 
 </main>
 
 <script>
+/*
+ * ============================================================
+ * HITSTER + SPOTIFY WEB API
+ * ============================================================
+ *
+ * 1. Create a Spotify Developer App.
+ * 2. Put your Spotify Client ID below.
+ * 3. Add the exact value of REDIRECT_URI to the Spotify app.
+ *
+ * Example GitHub Pages URL:
+ * https://YOURNAME.github.io/hitster/
+ *
+ * QR code example:
+ * https://YOURNAME.github.io/hitster/?spotify=TRACK_ID&seconds=10
+ *
+ * IMPORTANT:
+ * - No Spotify client secret belongs in this file.
+ * - Playback control requires Spotify Premium.
+ * - The Spotify app/device must be available as a Spotify Connect device.
+ */
+
+const CLIENT_ID = "c6477beb3421485494348f841dead1df";
+
+/*
+ * Using the current page as the OAuth callback makes this file
+ * usable directly on GitHub Pages.
+ *
+ * The URI must EXACTLY match the Redirect URI registered in
+ * the Spotify Developer Dashboard.
+ */
+const REDIRECT_URI =
+  window.location.origin + window.location.pathname;
+
+const SCOPES =
+  "user-modify-playback-state user-read-playback-state";
+
+/* ============================================================
+ * URL PARAMETERS
+ * ============================================================ */
 
 const params = new URLSearchParams(location.search);
 
-const spotify = params.get("spotify") || "";
+const spotifyTrackId =
+  params.get("spotify") || "";
 
 const seconds = Math.max(
   1,
@@ -145,267 +235,922 @@ const seconds = Math.max(
   )
 );
 
+/* ============================================================
+ * DOM
+ * ============================================================ */
+
 const start = document.getElementById("start");
 const ready = document.getElementById("ready");
 const timer = document.getElementById("timer");
 const count = document.getElementById("count");
 const done = document.getElementById("done");
 const again = document.getElementById("again");
+const redirectMessage =
+  document.getElementById("redirectMessage");
 
-const faceDownMessage =
-  document.getElementById("faceDownMessage");
+const connectButton =
+  document.getElementById("connect");
 
-const faceDownSub =
-  document.getElementById("faceDownSub");
+const auth =
+  document.getElementById("auth");
 
+const spotifyStatus =
+  document.getElementById("spotifyStatus");
+
+const deviceBox =
+  document.getElementById("deviceBox");
+
+const deviceSelect =
+  document.getElementById("device");
+
+const refreshDevices =
+  document.getElementById("refreshDevices");
+
+const status =
+  document.getElementById("status");
+
+/* ============================================================
+ * STATE
+ * ============================================================ */
 
 let running = false;
 let finished = false;
-let timerInterval = null;
+let motionListenerInstalled = false;
+let motionPermissionRequested = false;
+
+/* ============================================================
+ * SMALL HELPERS
+ * ============================================================ */
+
+function randomString(length = 64) {
+
+  const chars =
+    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~";
+
+  const array =
+    new Uint8Array(length);
+
+  crypto.getRandomValues(array);
+
+  return Array.from(array)
+    .map(x => chars[x % chars.length])
+    .join("");
+}
 
 
-/*
- * ---------------------------------------------------------
- * SENSOR PERMISSION
- * ---------------------------------------------------------
- *
- * iPhone/iPad require permission for motion sensors.
- * Android normally does not.
- */
-async function requestSensorPermission() {
+async function sha256Base64Url(value) {
+
+  const data =
+    new TextEncoder().encode(value);
+
+  const digest =
+    await crypto.subtle.digest("SHA-256", data);
+
+  return btoa(
+    String.fromCharCode(...new Uint8Array(digest))
+  )
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/, "");
+}
+
+
+function setStatus(message) {
+  status.textContent = message || "";
+}
+
+
+function spotifyUri() {
+  return `spotify:track:${spotifyTrackId}`;
+}
+
+
+function spotifyWebUrl() {
+  return `https://open.spotify.com/track/${encodeURIComponent(spotifyTrackId)}`;
+}
+
+
+/* ============================================================
+ * OAUTH / PKCE
+ * ============================================================ */
+
+async function loginWithSpotify() {
+
+  if (!CLIENT_ID ||
+      CLIENT_ID === "YOUR_SPOTIFY_CLIENT_ID") {
+
+    alert(
+      "Please set CLIENT_ID in index.html first."
+    );
+
+    return;
+  }
+
+  const codeVerifier =
+    randomString(64);
+
+  const codeChallenge =
+    await sha256Base64Url(codeVerifier);
+
+  const state =
+    randomString(32);
+
+  localStorage.setItem(
+    "hitster_code_verifier",
+    codeVerifier
+  );
+
+  localStorage.setItem(
+    "hitster_oauth_state",
+    state
+  );
+
+  const authorizationUrl =
+    new URL(
+      "https://accounts.spotify.com/authorize"
+    );
+
+  authorizationUrl.search =
+    new URLSearchParams({
+      response_type: "code",
+      client_id: CLIENT_ID,
+      scope: SCOPES,
+      redirect_uri: REDIRECT_URI,
+      code_challenge_method: "S256",
+      code_challenge: codeChallenge,
+      state
+    }).toString();
+
+  window.location.href =
+    authorizationUrl.toString();
+}
+
+
+async function handleOAuthCallback() {
+
+  const url =
+    new URL(window.location.href);
+
+  const code =
+    url.searchParams.get("code");
+
+  const returnedState =
+    url.searchParams.get("state");
+
+  const error =
+    url.searchParams.get("error");
+
+  if (error) {
+
+    console.error(
+      "Spotify authorization error:",
+      error
+    );
+
+    setStatus(
+      "Spotify authorization was cancelled."
+    );
+
+    cleanOAuthUrl();
+
+    return false;
+  }
+
+  if (!code) {
+    return false;
+  }
+
+  const savedState =
+    localStorage.getItem(
+      "hitster_oauth_state"
+    );
+
+  if (!savedState ||
+      returnedState !== savedState) {
+
+    setStatus(
+      "Spotify login failed: invalid OAuth state."
+    );
+
+    cleanOAuthUrl();
+
+    return false;
+  }
+
+  const codeVerifier =
+    localStorage.getItem(
+      "hitster_code_verifier"
+    );
+
+  if (!codeVerifier) {
+
+    setStatus(
+      "Spotify login failed: missing PKCE verifier."
+    );
+
+    cleanOAuthUrl();
+
+    return false;
+  }
+
+  setStatus(
+    "Finishing Spotify login…"
+  );
 
   try {
 
-    if (
-      typeof DeviceMotionEvent !== "undefined" &&
-      typeof DeviceMotionEvent.requestPermission === "function"
-    ) {
+    const response =
+      await fetch(
+        "https://accounts.spotify.com/api/token",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type":
+              "application/x-www-form-urlencoded"
+          },
+          body:
+            new URLSearchParams({
+              client_id: CLIENT_ID,
+              grant_type: "authorization_code",
+              code,
+              redirect_uri: REDIRECT_URI,
+              code_verifier: codeVerifier
+            })
+        }
+      );
 
-      const permission =
-        await DeviceMotionEvent.requestPermission();
+    const data =
+      await response.json();
 
-      if (permission !== "granted") {
-        console.log("Motion permission not granted.");
-      }
-
+    if (!response.ok) {
+      throw new Error(
+        data.error_description ||
+        data.error ||
+        "Token exchange failed."
+      );
     }
 
+    saveTokens(data);
+
+    localStorage.removeItem(
+      "hitster_code_verifier"
+    );
+
+    localStorage.removeItem(
+      "hitster_oauth_state"
+    );
+
+    cleanOAuthUrl();
+
+    return true;
+
+  } catch (error) {
+
+    console.error(error);
+
+    setStatus(
+      "Spotify login failed: " +
+      error.message
+    );
+
+    cleanOAuthUrl();
+
+    return false;
+  }
+}
+
+
+function cleanOAuthUrl() {
+
+  const cleanUrl =
+    window.location.origin +
+    window.location.pathname +
+    window.location.search;
+
+  window.history.replaceState(
+    {},
+    document.title,
+    cleanUrl
+  );
+}
+
+
+/* ============================================================
+ * TOKEN STORAGE / REFRESH
+ * ============================================================ */
+
+function saveTokens(data) {
+
+  localStorage.setItem(
+    "hitster_access_token",
+    data.access_token
+  );
+
+  if (data.refresh_token) {
+
+    localStorage.setItem(
+      "hitster_refresh_token",
+      data.refresh_token
+    );
+  }
+
+  localStorage.setItem(
+    "hitster_token_expires_at",
+    String(
+      Date.now() +
+      ((data.expires_in || 3600) * 1000)
+    )
+  );
+}
+
+
+async function refreshAccessToken() {
+
+  const refreshToken =
+    localStorage.getItem(
+      "hitster_refresh_token"
+    );
+
+  if (!refreshToken) {
+    return null;
+  }
+
+  try {
+
+    const response =
+      await fetch(
+        "https://accounts.spotify.com/api/token",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type":
+              "application/x-www-form-urlencoded"
+          },
+          body:
+            new URLSearchParams({
+              grant_type: "refresh_token",
+              refresh_token: refreshToken,
+              client_id: CLIENT_ID
+            })
+        }
+      );
+
+    const data =
+      await response.json();
+
+    if (!response.ok) {
+      throw new Error(
+        data.error_description ||
+        data.error ||
+        "Token refresh failed."
+      );
+    }
+
+    saveTokens(data);
+
+    return data.access_token;
+
+  } catch (error) {
+
+    console.error(error);
+
+    localStorage.removeItem(
+      "hitster_access_token"
+    );
+
+    localStorage.removeItem(
+      "hitster_token_expires_at"
+    );
+
+    return null;
+  }
+}
+
+
+async function getAccessToken() {
+
+  const token =
+    localStorage.getItem(
+      "hitster_access_token"
+    );
+
+  const expiresAt =
+    Number(
+      localStorage.getItem(
+        "hitster_token_expires_at"
+      ) || 0
+    );
+
+  /*
+   * Refresh 60 seconds before expiration.
+   */
+  if (token &&
+      Date.now() < expiresAt - 60000) {
+
+    return token;
+  }
+
+  return await refreshAccessToken();
+}
+
+
+/* ============================================================
+ * SPOTIFY API
+ * ============================================================ */
+
+async function spotifyFetch(
+  endpoint,
+  options = {},
+  retry = true
+) {
+
+  const token =
+    await getAccessToken();
+
+  if (!token) {
+    throw new Error(
+      "Spotify is not connected."
+    );
+  }
+
+  const response =
+    await fetch(
+      "https://api.spotify.com/v1" +
+      endpoint,
+      {
+        ...options,
+        headers: {
+          ...(options.headers || {}),
+          "Authorization":
+            `Bearer ${token}`
+        }
+      }
+    );
+
+  /*
+   * If the token expired unexpectedly,
+   * refresh it once and retry.
+   */
+  if (
+    response.status === 401 &&
+    retry
+  ) {
+
+    const refreshed =
+      await refreshAccessToken();
+
+    if (refreshed) {
+
+      return spotifyFetch(
+        endpoint,
+        options,
+        false
+      );
+    }
+  }
+
+  return response;
+}
+
+
+async function getDevices() {
+
+  const response =
+    await spotifyFetch(
+      "/me/player/devices"
+    );
+
+  if (!response.ok) {
+
+    const text =
+      await response.text();
+
+    throw new Error(
+      `Could not get Spotify devices (${response.status}): ${text}`
+    );
+  }
+
+  return await response.json();
+}
+
+
+async function refreshDeviceList() {
+
+  if (!spotifyTrackId) {
+    return;
+  }
+
+  try {
+
+    const data =
+      await getDevices();
+
+    const devices =
+      (data.devices || [])
+      .filter(
+        d => !d.is_restricted
+      );
+
+    deviceSelect.innerHTML = "";
+
+    if (!devices.length) {
+
+      deviceBox.classList.remove(
+        "hidden"
+      );
+
+      const option =
+        document.createElement("option");
+
+      option.textContent =
+        "No Spotify devices available";
+
+      option.value = "";
+
+      deviceSelect.appendChild(
+        option
+      );
+
+      setStatus(
+        "Open Spotify on a phone, computer or speaker, then refresh devices."
+      );
+
+      return;
+    }
+
+    devices.forEach(
+      device => {
+
+        const option =
+          document.createElement(
+            "option"
+          );
+
+        option.value =
+          device.id || "";
+
+        option.textContent =
+          `${device.name} — ${device.type}` +
+          (device.is_active
+            ? " ✓ ACTIVE"
+            : "");
+
+        option.dataset.active =
+          device.is_active
+            ? "true"
+            : "false";
+
+        deviceSelect.appendChild(
+          option
+        );
+      }
+    );
+
+    /*
+     * Prefer the active device.
+     */
+    const active =
+      devices.find(
+        d => d.is_active
+      );
+
+    if (active) {
+      deviceSelect.value =
+        active.id || "";
+    }
+
+    deviceBox.classList.remove(
+      "hidden"
+    );
+
+    setStatus(
+      `${devices.length} Spotify device` +
+      (devices.length === 1 ? "" : "s") +
+      " available."
+    );
+
+  } catch (error) {
+
+    console.error(error);
+
+    setStatus(
+      error.message
+    );
+  }
+}
+
+
+async function playSpotifyTrack() {
+
+  if (!spotifyTrackId) {
+
+    redirectMessage.textContent =
+      "No Spotify track was supplied.";
+
+    return false;
+  }
+
+  const token =
+    await getAccessToken();
+
+  if (!token) {
+
+    redirectMessage.textContent =
+      "Spotify is not connected.";
+
+    fallbackToSpotify();
+
+    return false;
+  }
+
+  /*
+   * If the user selected a device, target it.
+   * Otherwise Spotify uses the active device.
+   */
+  const selectedDevice =
+    deviceSelect.value || "";
+
+  const body = {
+    uris: [
+      spotifyUri()
+    ],
+    position_ms: 0
+  };
+
+  if (selectedDevice) {
+    body.device_id = selectedDevice;
+  }
+
+  try {
+
+    redirectMessage.textContent =
+      "Starting Spotify…";
+
+    /*
+     * The Spotify Web API expects device_id
+     * as a query parameter, not in the JSON body.
+     */
+    const endpoint =
+      selectedDevice
+        ? `/me/player/play?device_id=${encodeURIComponent(selectedDevice)}`
+        : "/me/player/play";
+
+    const response =
+      await spotifyFetch(
+        endpoint,
+        {
+          method: "PUT",
+          headers: {
+            "Content-Type":
+              "application/json"
+          },
+          body: JSON.stringify({
+            uris: body.uris,
+            position_ms: body.position_ms
+          })
+        }
+      );
+
+    if (response.ok) {
+
+      redirectMessage.textContent =
+        "▶ Playing on Spotify";
+
+      setStatus(
+        "Spotify playback started."
+      );
+
+      return true;
+    }
+
+    let errorText = "";
+
+    try {
+      const errorData =
+        await response.json();
+
+      errorText =
+        errorData.error?.message ||
+        JSON.stringify(errorData);
+
+    } catch {
+      errorText =
+        await response.text();
+    }
+
+    throw new Error(
+      `Spotify returned ${response.status}: ${errorText}`
+    );
+
+  } catch (error) {
+
+    console.error(
+      "Spotify playback failed:",
+      error
+    );
+
+    redirectMessage.textContent =
+      "Spotify API playback failed.";
+
+    setStatus(
+      error.message
+    );
+
+    /*
+     * Give the user a fallback that tries to open
+     * the Spotify app / Spotify link.
+     */
+    fallbackToSpotify();
+
+    return false;
+  }
+}
+
+
+/* ============================================================
+ * FALLBACK
+ * ============================================================ */
+
+function fallbackToSpotify() {
+
+  if (!spotifyTrackId) {
+    return;
+  }
+
+  /*
+   * spotify: URI is the strongest attempt to open
+   * the native Spotify application.
+   *
+   * Browsers/OSes may refuse custom URI schemes.
+   */
+  const uri =
+    spotifyUri();
+
+  const web =
+    spotifyWebUrl();
+
+  try {
+    window.location.href = uri;
+  } catch {
+    window.location.href = web;
+  }
+
+  /*
+   * If the custom URI scheme was ignored,
+   * offer the normal Spotify URL shortly afterwards.
+   */
+  setTimeout(() => {
+
     if (
-      typeof DeviceOrientationEvent !== "undefined" &&
-      typeof DeviceOrientationEvent.requestPermission === "function"
+      document.visibilityState === "visible"
     ) {
+      window.location.href = web;
+    }
+
+  }, 1200);
+}
+
+
+/* ============================================================
+ * MOTION / FACE-DOWN DETECTION
+ * ============================================================ */
+
+async function requestMotionPermission() {
+
+  if (motionPermissionRequested) {
+    return true;
+  }
+
+  motionPermissionRequested = true;
+
+  /*
+   * iOS Safari requires permission to use
+   * device orientation sensors.
+   */
+  if (
+    typeof DeviceOrientationEvent !== "undefined" &&
+    typeof DeviceOrientationEvent.requestPermission === "function"
+  ) {
+
+    try {
 
       const permission =
         await DeviceOrientationEvent.requestPermission();
 
       if (permission !== "granted") {
-        console.log("Orientation permission not granted.");
+
+        setStatus(
+          "Motion permission was not granted."
+        );
+
+        return false;
       }
 
+    } catch (error) {
+
+      console.error(error);
+
+      setStatus(
+        "Could not access motion sensors."
+      );
+
+      return false;
     }
-
-  } catch (error) {
-
-    console.log(
-      "Sensor permission request failed:",
-      error
-    );
-
   }
 
+  installMotionListener();
+
+  return true;
 }
 
 
-/*
- * ---------------------------------------------------------
- * FACE-DOWN DETECTION
- * ---------------------------------------------------------
- *
- * beta close to ±180° generally means the back of the
- * phone is facing upward / screen is facing downward.
- */
-function isFaceDown(event) {
+function installMotionListener() {
 
-  if (typeof event.beta !== "number") {
-    return false;
-  }
-
-  const beta = Math.abs(event.beta);
-
-  return beta > 150;
-}
-
-
-/*
- * ---------------------------------------------------------
- * PHONE FLIPPED
- * ---------------------------------------------------------
- */
-function handleOrientation(event) {
-
-  /*
-   * If something has already triggered Spotify,
-   * ignore further sensor events.
-   */
-  if (!running || finished) {
+  if (motionListenerInstalled) {
     return;
   }
 
-  if (!isFaceDown(event)) {
-    return;
-  }
+  motionListenerInstalled = true;
 
-  /*
-   * Phone was flipped before the countdown ended.
-   */
-  openSpotify("flip");
+  window.addEventListener(
+    "deviceorientation",
+    event => {
 
+      if (
+        !running ||
+        finished
+      ) {
+        return;
+      }
+
+      /*
+       * beta is rotation around the phone's
+       * left/right axis.
+       *
+       * Around +/-180° means the display is
+       * facing away/down.
+       *
+       * We use a threshold rather than requiring
+       * exactly 180°, because real sensors are noisy.
+       */
+      const beta =
+        Number(event.beta);
+
+      if (
+        Number.isFinite(beta) &&
+        Math.abs(beta) > 150
+      ) {
+
+        finishNow(
+          "phone flipped face-down"
+        );
+      }
+
+    },
+    true
+  );
 }
 
 
-/*
- * ---------------------------------------------------------
- * OPEN SPOTIFY
- * ---------------------------------------------------------
- *
- * This function can be triggered by:
- *
- *   1. Countdown reaching zero
- *   2. Phone being flipped face-down
- *
- * Whichever happens first wins.
- */
-function openSpotify(reason) {
+/* ============================================================
+ * COUNTDOWN
+ * ============================================================ */
+
+function finishNow(reason) {
 
   if (finished) {
     return;
   }
 
   finished = true;
-  running = false;
 
-
-  /*
-   * Stop countdown.
-   */
-  if (timerInterval) {
-
-    clearInterval(timerInterval);
-    timerInterval = null;
-
-  }
-
-
-  /*
-   * Stop listening for orientation changes.
-   */
-  window.removeEventListener(
-    "deviceorientation",
-    handleOrientation,
-    true
+  timer.classList.add(
+    "hidden"
   );
 
+  done.classList.remove(
+    "hidden"
+  );
 
-  /*
-   * Update screen.
-   */
-  timer.classList.add("hidden");
-  done.classList.remove("hidden");
+  again.style.display =
+    "inline-block";
 
-  faceDownMessage.textContent =
-    reason === "flip" ? "FLIPPED!" : "TIME!";
+  redirectMessage.textContent =
+    reason === "timer"
+      ? "Time is up — starting Spotify…"
+      : "Phone flipped — starting Spotify…";
 
-  faceDownSub.textContent =
-    "Opening Spotify…";
-
-
-  /*
-   * Small vibration.
-   */
   if (navigator.vibrate) {
 
-    navigator.vibrate([
-      120,
-      80,
-      120
-    ]);
-
-  }
-
-
-  /*
-   * No Spotify URL.
-   */
-  if (!spotify) {
-
-    faceDownSub.textContent =
-      "No Spotify track was supplied.";
-
-    again.style.display = "inline-block";
-
-    return;
-  }
-
-
-  /*
-   * Open Spotify in a NEW TAB.
-   */
-  const newTab =
-    window.open(
-      spotify,
-      "_blank",
-      "noopener,noreferrer"
+    navigator.vibrate(
+      [120,80,120]
     );
-
-
-  /*
-   * Try to close this countdown tab.
-   *
-   * Browsers may refuse this if the current tab was
-   * opened directly by scanning a QR code.
-   */
-  setTimeout(() => {
-
-    try {
-
-      window.close();
-
-    } catch (error) {
-
-      console.log(
-        "Browser prevented closing the current tab."
-      );
-
-    }
-
-  }, 150);
-
-
-  /*
-   * If popup blocking prevented the new tab,
-   * provide a fallback by navigating the current tab.
-   */
-  if (!newTab) {
-
-    faceDownSub.textContent =
-      "Opening Spotify…";
-
-    setTimeout(() => {
-
-      window.location.href = spotify;
-
-    }, 100);
-
   }
 
+  playSpotifyTrack();
 }
 
 
-/*
- * ---------------------------------------------------------
- * START COUNTDOWN
- * ---------------------------------------------------------
- */
 async function run() {
 
   if (running) {
@@ -415,126 +1160,213 @@ async function run() {
   running = true;
   finished = false;
 
-  ready.classList.add("hidden");
-  done.classList.add("hidden");
-  timer.classList.remove("hidden");
-
-  again.style.display = "none";
-
-
-  /*
-   * Request sensor permissions while we still have
-   * a user gesture.
-   */
-  await requestSensorPermission();
-
-
-  /*
-   * Listen for the phone being flipped.
-   */
-  window.addEventListener(
-    "deviceorientation",
-    handleOrientation,
-    true
+  ready.classList.add(
+    "hidden"
   );
 
+  done.classList.add(
+    "hidden"
+  );
+
+  timer.classList.remove(
+    "hidden"
+  );
+
+  again.style.display =
+    "none";
+
+  /*
+   * The motion listener must already exist
+   * before the countdown starts.
+   */
+  await requestMotionPermission();
 
   let n = seconds;
 
-  count.textContent = n;
+  count.textContent =
+    n;
 
+  const tick =
+    setInterval(
+      () => {
 
-  timerInterval = setInterval(() => {
+        if (finished) {
 
-    /*
-     * The phone may have been flipped between timer ticks.
-     */
-    if (finished) {
-      return;
-    }
+          clearInterval(
+            tick
+          );
 
-    n--;
+          return;
+        }
 
-    if (n <= 0) {
+        n--;
 
-      /*
-       * Timer wins.
-       */
-      openSpotify("timer");
+        if (n <= 0) {
 
-    } else {
+          clearInterval(
+            tick
+          );
 
-      count.textContent = n;
+          finishNow(
+            "timer"
+          );
 
-    }
+        } else {
 
-  }, 1000);
+          count.textContent =
+            n;
+        }
 
+      },
+      1000
+    );
 }
 
 
-/*
- * ---------------------------------------------------------
- * MANUAL START
- * ---------------------------------------------------------
- */
-start.addEventListener("click", run);
+/* ============================================================
+ * UI EVENTS
+ * ============================================================ */
 
+start.addEventListener(
+  "click",
+  async () => {
 
-/*
- * ---------------------------------------------------------
- * AGAIN
- * ---------------------------------------------------------
- */
-again.addEventListener("click", () => {
-
-  window.removeEventListener(
-    "deviceorientation",
-    handleOrientation,
-    true
-  );
-
-  if (timerInterval) {
-
-    clearInterval(timerInterval);
-    timerInterval = null;
-
-  }
-
-  running = false;
-  finished = false;
-
-  done.classList.add("hidden");
-  ready.classList.remove("hidden");
-
-  faceDownMessage.textContent = "TIME!";
-  faceDownSub.textContent = "Opening Spotify…";
-
-});
-
-
-/*
- * ---------------------------------------------------------
- * AUTOMATIC START
- * ---------------------------------------------------------
- *
- * Countdown still starts automatically, as in the
- * original version.
- *
- * IMPORTANT:
- * On iOS, motion permission may require the user to
- * press START COUNTDOWN.
- * ---------------------------------------------------------
- */
-window.addEventListener("load", () => {
-
-  setTimeout(() => {
+    /*
+     * This click is also a valid user gesture
+     * for iOS motion permission.
+     */
+    await requestMotionPermission();
 
     run();
+  }
+);
 
-  }, 100);
 
-});
+again.addEventListener(
+  "click",
+  () => {
+
+    running = false;
+    finished = false;
+
+    done.classList.add(
+      "hidden"
+    );
+
+    ready.classList.remove(
+      "hidden"
+    );
+
+    timer.classList.add(
+      "hidden"
+    );
+
+    redirectMessage.textContent =
+      "Starting Spotify…";
+
+    setStatus("");
+  }
+);
+
+
+connectButton.addEventListener(
+  "click",
+  async () => {
+
+    await loginWithSpotify();
+  }
+);
+
+
+refreshDevices.addEventListener(
+  "click",
+  async () => {
+
+    await refreshDeviceList();
+  }
+);
+
+
+/* ============================================================
+ * INITIALIZATION
+ * ============================================================ */
+
+async function initialize() {
+
+  if (!spotifyTrackId) {
+
+    setStatus(
+      "Add ?spotify=TRACK_ID to the URL."
+    );
+
+    start.disabled = true;
+
+    spotifyStatus.textContent =
+      "Spotify: no track selected";
+
+    return;
+  }
+
+  /*
+   * Handle Spotify's OAuth redirect first.
+   */
+  await handleOAuthCallback();
+
+  const token =
+    await getAccessToken();
+
+  if (token) {
+
+    spotifyStatus.textContent =
+      "Spotify: ✓ connected";
+
+    auth.classList.add(
+      "hidden"
+    );
+
+    start.disabled = false;
+
+    await refreshDeviceList();
+
+    /*
+     * The page can start automatically after
+     * authorization has already been completed.
+     *
+     * On iOS, motion permission may still require
+     * the user to press START once.
+     */
+    setTimeout(
+      () => run(),
+      150
+    );
+
+  } else {
+
+    spotifyStatus.textContent =
+      "Spotify: not connected";
+
+    auth.classList.remove(
+      "hidden"
+    );
+
+    /*
+     * Without Spotify authorization, the countdown
+     * can still run and eventually use the fallback.
+     */
+    start.disabled = false;
+
+    setTimeout(
+      () => run(),
+      150
+    );
+  }
+}
+
+
+window.addEventListener(
+  "load",
+  initialize
+);
 
 </script>
 
